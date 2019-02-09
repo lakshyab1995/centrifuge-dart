@@ -108,6 +108,7 @@ class Transport {
 
   Function _onData(void onPush(Push push)) {
     return (dynamic input) {
+      print(input);
       final replies = _replyDecoder.convert(input);
       replies.forEach((reply) {
         if (reply.id > 0) {

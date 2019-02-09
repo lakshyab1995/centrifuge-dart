@@ -22,7 +22,7 @@ void main() async {
     client.connectStream.listen(onEvent);
     client.disconnectStream.listen(onEvent);
 
-    await client.connect();
+    client.connect();
 
     final subscription = client.subscribe(channel);
 
@@ -56,10 +56,10 @@ Function(String) _handleUserInput(
         await subscription.unsubscribe();
         break;
       case '#connect':
-        await centrifuge.connect();
+        centrifuge.connect();
         break;
       case '#disconnect':
-        await centrifuge.disconnect();
+        centrifuge.disconnect();
         break;
       default:
         final output = jsonEncode({'input': message});

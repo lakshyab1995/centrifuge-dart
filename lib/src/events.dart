@@ -99,7 +99,7 @@ class LeaveEvent {
 }
 
 class SubscribeSuccessEvent {
-  SubscribeSuccessEvent(this.isResubscribed, this.isRecovered);
+  const SubscribeSuccessEvent(this.isResubscribed, this.isRecovered);
 
   final bool isResubscribed;
   final bool isRecovered;
@@ -115,7 +115,7 @@ class SubscribeSuccessEvent {
 }
 
 class SubscribeErrorEvent {
-  SubscribeErrorEvent(this.message, this.code);
+  const SubscribeErrorEvent(this.message, this.code);
 
   final String message;
   final int code;
@@ -130,6 +130,8 @@ class SubscribeErrorEvent {
 }
 
 class UnsubscribeEvent {
+  const UnsubscribeEvent();
+
   @override
   String toString() {
     return 'UnsubscribeEvent{}';

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math';
 
 import 'package:meta/meta.dart';
 
@@ -38,9 +40,9 @@ class ClientConfig {
 abstract class Client {
   void setToken(String token);
 
-  Future<void> connect();
+  void connect();
 
-  Future<void> disconnect();
+  void disconnect();
 
   Subscription subscribe(String channel, {String token});
 
@@ -53,6 +55,8 @@ abstract class Client {
   Stream<MessageEvent> get messageStream;
 }
 
+enum ClientState { connected, disconnected, connecting }
+
 class _Client implements Client, SubscriptionClient {
   _Client(this.url, this.config, this.transportBuilder);
 
@@ -64,6 +68,8 @@ class _Client implements Client, SubscriptionClient {
 
   final String url;
   ClientConfig config;
+
+  ClientState state = ClientState.disconnected;
 
   final _connectController = StreamController<ConnectEvent>.broadcast();
   final _disconnectController = StreamController<DisconnectEvent>.broadcast();
@@ -82,26 +88,41 @@ class _Client implements Client, SubscriptionClient {
   void setToken(String token) => _token = token;
 
   @override
-  Future<void> connect() async {
-    _transport = transportBuilder(url: url, headers: config.headers);
-
-    await _transport.open(
-      _onPush,
-      onError: (dynamic error) =>
-          _processDisconnect(reason: error.toString(), shouldReconnect: false),
-      onDone: () => _processDisconnect(reason: 'done', shouldReconnect: false),
-    );
-
-    final request = ConnectRequest();
-    if (_token != null) {
-      request.token = _token;
+  void connect() async {
+    if (state == ClientState.connected) {
+      return;
     }
 
-    final result = await _transport.send(
-      request,
-      ConnectResult(),
-    );
-    _connectController.add(ConnectEvent.from(result));
+    state = ClientState.connecting;
+
+    _transport = transportBuilder(url: url, headers: config.headers);
+
+    try {
+      await _transport.open(
+        _onPush,
+        onError: (dynamic error) => _processDisconnect(
+            reason: error.toString(), recommendedReconnect: true),
+        onDone: () =>
+            _processDisconnect(reason: 'done', recommendedReconnect: true),
+      );
+
+      final request = ConnectRequest();
+      if (_token != null) {
+        request.token = _token;
+      }
+
+      final result = await _transport.send(
+        request,
+        ConnectResult(),
+      );
+      _processConnect(result);
+    } on SocketException catch (error) {
+      _processDisconnect(
+          reason: error.message ?? error.osError.message,
+          recommendedReconnect: true);
+    } catch (error) {
+      _processDisconnect(reason: error.toString(), recommendedReconnect: true);
+    }
   }
 
   @override
@@ -119,19 +140,47 @@ class _Client implements Client, SubscriptionClient {
     return subscription;
   }
 
+  var _numRetries = 0;
+
+  void _processConnect(ConnectResult result) {
+    _connectController.add(ConnectEvent.from(result));
+    _numRetries = 0;
+    state = ClientState.connected;
+  }
+
   @override
-  Future<void> disconnect() async {
+  void disconnect() async {
+    state = ClientState.disconnected;
+    _numRetries = 0;
     await _transport.close();
   }
 
-  void _processDisconnect({@required String reason, bool shouldReconnect}) {
-    for (_Subscription subscription in _subscriptions.values) {
-      final unsubscribe = UnsubscribeEvent();
-      subscription.onUnsubscribe(unsubscribe);
+  void _processDisconnect(
+      {@required String reason, bool recommendedReconnect}) {
+    if (state == ClientState.connected) {
+      _subscriptions.values.forEach((s) => s.onUnsubscribe(UnsubscribeEvent()));
+
+      final disconnect = DisconnectEvent(reason, recommendedReconnect);
+      _disconnectController.add(disconnect);
     }
 
-    final disconnect = DisconnectEvent(reason, shouldReconnect);
-    _disconnectController.add(disconnect);
+    if (recommendedReconnect && state != ClientState.disconnected) {
+      state = ClientState.connecting;
+      _scheduleReconnect();
+    } else {
+      state = ClientState.disconnected;
+    }
+  }
+
+  void _scheduleReconnect() async {
+    _numRetries++;
+
+    final delay = min(pow(2, _numRetries), config.maxReconnectDelay.inSeconds);
+    await Future<void>.delayed(Duration(seconds: delay));
+
+    if (state == ClientState.connecting) {
+      connect();
+    }
   }
 
   @override
