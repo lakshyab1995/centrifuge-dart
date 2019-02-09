@@ -157,14 +157,16 @@ class _Client implements Client, SubscriptionClient {
 
   void _processDisconnect(
       {@required String reason, bool recommendedReconnect}) {
-    if (state == ClientState.connected) {
+    final reconnect = recommendedReconnect && state != ClientState.disconnected;
+
+    if (state != ClientState.connecting) {
       _subscriptions.values.forEach((s) => s.onUnsubscribe(UnsubscribeEvent()));
 
-      final disconnect = DisconnectEvent(reason, recommendedReconnect);
+      final disconnect = DisconnectEvent(reason, reconnect);
       _disconnectController.add(disconnect);
     }
 
-    if (recommendedReconnect && state != ClientState.disconnected) {
+    if (reconnect) {
       state = ClientState.connecting;
       _scheduleReconnect();
     } else {

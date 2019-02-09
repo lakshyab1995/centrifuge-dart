@@ -31,14 +31,18 @@ class ConnectEvent {
 }
 
 class DisconnectEvent {
-  DisconnectEvent(this.reason, this.shouldReconnect);
+  DisconnectEvent(this.reason, this.reconnect);
 
   final String reason;
-  final bool shouldReconnect;
+
+  ///
+  /// If [reconnect] is true, the client will retry to reconnect.
+  ///
+  final bool reconnect;
 
   @override
   String toString() {
-    return 'DisconnectEvent{reason: $reason, shouldReconnect: $shouldReconnect}';
+    return 'DisconnectEvent{reason: $reason, reconnect: $reconnect}';
   }
 }
 
