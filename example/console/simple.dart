@@ -19,54 +19,72 @@ void main() async {
       ),
     );
 
-    client.connectStream.listen(onEvent);
+    centrifuge.Subscription subscriptionHandler;
+
+    client.connectStream.listen((event) async {
+      onEvent(event);
+
+      final subscription = client.subscribe(channel);
+
+      subscription.publishStream
+          .map((e) => utf8.decode(e.data))
+          .listen(onEvent);
+
+      subscription.joinStream.listen(onEvent);
+      subscription.leaveStream.listen(onEvent);
+
+      subscription.subscribeSuccessStream.listen((event) {
+        onEvent(event);
+        subscriptionHandler = subscription;
+      });
+      subscription.subscribeErrorStream.listen((event) {
+        onEvent(event);
+        subscriptionHandler = null;
+      });
+      subscription.unsubscribeStream.listen((event) {
+        onEvent(event);
+        subscriptionHandler = null;
+      });
+    });
+
     client.disconnectStream.listen(onEvent);
-
     client.connect();
-
-    final subscription = client.subscribe(channel);
-
-    subscription.publishStream.map((e) => utf8.decode(e.data)).listen(onEvent);
-    subscription.joinStream.listen(onEvent);
-    subscription.leaveStream.listen(onEvent);
-
-    subscription.subscribeSuccessStream.listen(onEvent);
-    subscription.subscribeErrorStream.listen(onEvent);
-    subscription.unsubscribeStream.listen(onEvent);
-
-    final handler = _handleUserInput(client, subscription);
 
     await for (List<int> codeUnit in stdin) {
       final message = utf8.decode(codeUnit).trim();
-      handler(message);
+      print('message = $message');
+
+      await processInput(message, subscriptionHandler, client);
     }
   } catch (ex) {
     print(ex);
   }
 }
 
-Function(String) _handleUserInput(
-    centrifuge.Client centrifuge, centrifuge.Subscription subscription) {
-  return (String message) async {
-    switch (message) {
-      case '#subscribe':
-        await subscription.subscribe();
-        break;
-      case '#unsubscribe':
-        await subscription.unsubscribe();
-        break;
-      case '#connect':
-        centrifuge.connect();
-        break;
-      case '#disconnect':
-        centrifuge.disconnect();
-        break;
-      default:
-        final output = jsonEncode({'input': message});
-        final data = utf8.encode(output);
-        await subscription.publish(data);
-        break;
-    }
-    return;
-  };
+Future processInput(String message, centrifuge.Subscription subscriptionHandler,
+    centrifuge.Client client) async {
+  switch (message) {
+    case '#subscribe':
+      await subscriptionHandler.subscribe();
+      break;
+    case '#unsubscribe':
+      await subscriptionHandler.unsubscribe();
+      break;
+    case '#connect':
+      client.connect();
+      break;
+    case '#disconnect':
+      client.disconnect();
+      break;
+    default:
+      final output = jsonEncode({'input': message});
+      final data = utf8.encode(output);
+      if (subscriptionHandler == null) {
+        print('> No subscription');
+      } else {
+        subscriptionHandler.publish(data);
+      }
+      break;
+  }
+  return;
 }
