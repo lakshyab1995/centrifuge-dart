@@ -21,6 +21,7 @@ void main() async {
 
     client.connectStream.listen(onEvent);
     client.disconnectStream.listen(onEvent);
+    client.messageStream.listen(onEvent);
 
     await client.connect();
 
